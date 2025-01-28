@@ -9,7 +9,7 @@ ClientId id,
 TourName varchar(50) 
 ) 
 
-Create table clients ( 
+Create table Clients ( 
 Id int primary key identity, 
 Username varchar(50) 
 Password varchar(60) 
