@@ -1,0 +1,228 @@
+﻿@using Blazor
+@page "/myreservations"
+@rendermode InteractiveServer
+
+@inject ApplicationDbContext DbContext
+@inject SharedStateService StateService
+@inject NavigationManager NavigationManager
+
+<PageTitle>My Reservations</PageTitle>
+
+@using Microsoft.EntityFrameworkCore;
+
+<div class="reservations-container">
+    <h1 class="title">My Reservations</h1>
+
+    @if (StateService.Account.Username == "Guest")
+    {
+        <p class="message error">You must be logged in to see your tours.</p>
+    }
+    else
+    {
+        @if (IsLoading)
+        {
+            <p>Loading tours...</p>
+        }
+        else if (!BookedTours.Any())
+        {
+            <p class="message">You haven't booked any tours yet.</p>
+        }
+        else
+        {
+            <div class="table-container">
+                <table class="reservations-table">
+                    <thead>
+                        <tr>
+                            <th>Tour Name</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var tour in BookedTours)
+                        {
+                            <tr>
+                                <td>@tour.TourName</td>
+                                <td>
+                                    <button class="btn btn-danger" @onclick="@(() => CancelTour(tour.Id))">Cancel</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (HasMoreData)
+            {
+                <br />
+                <button class="btn btn-primary" @onclick="@LoadNextTours">Load More</button>
+            }
+        }
+    }
+    <br />
+    <button class="btn btn-secondary" @onclick="RefreshPage">Reload Tours</button>
+
+    <p class="message confirmation">@Message</p>
+</div>
+
+<style>
+    /* Container Styling */
+    .reservations-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-top: 30px;
+    }
+
+    .title {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 15px;
+    }
+
+    .message {
+        font-size: 1.1rem;
+        font-weight: bold;
+        margin-top: 10px;
+    }
+
+    .error {
+        color: red;
+    }
+
+    .confirmation {
+        color: green;
+    }
+
+    /* Table Styling */
+    .table-container {
+        width: 100%;
+        max-width: 600px;
+        overflow-x: auto;
+    }
+
+    .reservations-table {
+        width: 100%;
+        border-collapse: collapse;
+        box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+        .reservations-table th, .reservations-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .reservations-table th {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .reservations-table tr:hover {
+            background-color: #f2f2f2;
+        }
+
+    /* Button Styling */
+    .btn {
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background 0.3s ease, transform 0.2s ease;
+    }
+
+        .btn:hover {
+            background-color: #c82333;
+            transform: scale(1.05);
+        }
+
+</style>
+
+@code {
+    private List<BookedTour> BookedTours = new();
+    private bool IsLoading = false;
+    private int Skip = 0;
+    private int Take = 5; // Number of tours to load at a time
+    private bool HasMoreData = false;
+    private string Message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBookedTours();
+    }
+
+    private async Task LoadBookedTours()
+    {
+        try
+        {
+            IsLoading = true;
+            var userId = StateService.Account?.Id;
+
+            if (userId == null)
+            {
+                BookedTours = new();
+                IsLoading = false;
+                return;
+            }
+
+            BookedTours = await DbContext.BookedTours
+                .Where(t => t.ClientId == userId)
+                .Skip(Skip)
+                .Take(Take)
+                .ToListAsync();
+
+            HasMoreData = await DbContext.BookedTours
+                .Where(t => t.ClientId == userId)
+                .CountAsync() > Skip + Take;
+
+            IsLoading = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading tours: {ex.Message}");
+            IsLoading = false;
+        }
+    }
+
+    private async Task LoadNextTours()
+    {
+        Skip += Take;
+        await LoadBookedTours();
+    }
+
+    private async Task CancelTour(int tourId)
+    {
+        try
+        {
+            var tour = await DbContext.BookedTours.FindAsync(tourId);
+
+            if (tour == null)
+            {
+                Message = "The tour could not be found.";
+                return;
+            }
+
+            DbContext.BookedTours.Remove(tour);
+            await DbContext.SaveChangesAsync();
+
+            Message = $"{tour.TourName} has been canceled.";
+
+            StateHasChanged();
+            await Task.Delay(300);
+            NavigationManager.NavigateTo(NavigationManager.Uri, true);
+        }
+        catch (Exception ex)
+        {
+            Message = $"Error canceling the tour: {ex.Message}";
+        }
+    }
+
+    private void RefreshPage()
+    {
+        NavigationManager.NavigateTo(NavigationManager.Uri, true);
+    }
+}
